@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2024 Bloomberg Finance L.P.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,22 +13,67 @@
 # limitations under the License.
 
 import os
-import sys
+import pika
 
-from solution.consumer_sol import mqConsumer  # pylint: disable=import-error
+class mqConsumerInterface:
+    def __init__(
+        self, binding_key: str, exchange_name: str, queue_name: str
+    ) -> None:
+        # Save parameters to class variables
+        self.binding_key = binding_key
+        self.queue_name = queue_name
+        self.exchange_name = exchange_name
+        # Call setupRMQConnection
+        self.setupRMQConnection
+        pass
 
+    def setupRMQConnection(self) -> None:
+        # Set-up Connection to RabbitMQ service
+        con_params = pika.URLParameters(os.environ["AMP_URL"])
+        self.connection = pika.BlockingConnection(parameters=con_params)
 
-def main() -> None:
-    consumer = mqConsumer(binding_key="Tech Lab Key",exchange_name="Tech Lab Exchange",queue_name="Tech Lab Queue")
-    consumer.startConsuming()
+        # Establish Channel
+        self.channel = self.connection.channel()
 
+        # Create Queue if not already present
+        self.channel.queue_declare(queue=self.queue_name)
 
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("Interrupted")
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
+        # Create the exchange if not already present
+        self.exchange = self.channel.exchange_declare(exchange=self.exchange_name)
+
+        # Bind Binding Key to Queue on the exchange
+        self.channel.queue_bind(
+            queue=self.queue_name,
+            routing_key= self.binding_key,
+            exchange=self.exchange_name,
+        )
+        # Set-up Callback function for receiving messages
+        self.channel.basic_consume(
+            self.queue_name, self.on_message_callback, auto_ack= False
+        )
+
+    def on_message_callback(
+        self, channel, method_frame, header_frame, body
+    ) -> None:
+        # Acknowledge message
+        channel.basic_ack(method_frame.delivery_tag, False)
+
+        #Print message (The message is contained in the body parameter variable)
+        print(self.body)
+
+    def startConsuming(self) -> None:
+        # Print " [*] Waiting for messages. To exit press CTRL+C"
+
+        print(" [*] Waiting for messages. To exit press CTRL+C")
+        # Start consuming messages
+        self.channel.start_consuming()
+    
+    def __del__(self) -> None:
+        # Print "Closing RMQ connection on destruction"
+        print("Closing RMQ connection on destruction")
+        # Close Channel
+
+        self.channel.close()
+        # Close Connection
+        self.connection.close()        
+    
